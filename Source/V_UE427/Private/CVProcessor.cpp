@@ -3,19 +3,60 @@
 
 #include "CVProcessor.h"
 
-void ACVProcessor::Set3VectorPoints(TArray<float>& XPos, TArray<float>& YPos, TArray<float>& Sizes)
+TArray<FVector> ACVProcessor::Set3VectorPoints(TArray<float> XPos, TArray<float> YPos, TArray<float> Sizes)
 {
 	points = Generate3Vector(XPos, YPos, Sizes);
+	return points;
 }
 
 void ACVProcessor::IterateAllPlanet()
 {
 	// TODO: Iterate all planets
 	// calculate the gravity point via CalculateGravityPoint
-	// assign 3 attraction point for the planet via GetNearest3Point
+	// assign 3 attraction point for the planet via CalculateGetNearest3Point
 }
 
-TArray<FVector> ACVProcessor::Generate3Vector(TArray<float>& XPos, TArray<float>& YPos, TArray<float>& Sizes)
+TArray<FVector> ACVProcessor::GetNearest2Points(FVector Position, float Limit)
+{
+	TMap<FVector, float> nearest = CalculateGetNearest3Point(points, Position, Limit);
+	TArray<FVector> nearestVectors;
+	nearest.GenerateKeyArray(nearestVectors);
+	return nearestVectors;
+}
+
+FVector ACVProcessor::GetGravityPoint(FVector Position, float PSizeCoefficient, float PForceCoefficient)
+{
+	const TMap<FVector, float> nearest = CalculateGetNearest3Point(points, Position, 1000);
+	const FVector gravityPoint = CalculateGravityPoint(nearest, PSizeCoefficient, PForceCoefficient);
+	return gravityPoint;
+}
+
+TArray<FVector> ACVProcessor::AdjustPlanetPoint(TArray<FVector> CameraPointPosition, int SceneSizeX, int SceneSizeY)
+{
+	TArray<FVector> ScenePointPosition;
+	int MidX = SceneSizeX / 2;
+	int MidY = SceneSizeY / 2;
+	for (FVector Point : CameraPointPosition)
+	{
+		float AdjustX = (Point.X / 1920) * SceneSizeX - MidX;
+		float AdjustY = (Point.Y / 1082) * SceneSizeY - MidY;
+		ScenePointPosition.Add(FVector(AdjustX, AdjustY, Point.Z));
+	}
+	points = ScenePointPosition;
+	return ScenePointPosition;
+}
+
+TArray<FVector> ACVProcessor::GetRelativePositionArray(TArray<FVector> ScenePoints, FVector PlanetPosition)
+{
+	TArray<FVector> RelativePositionArray;
+	for (FVector Point : ScenePoints)
+	{
+		RelativePositionArray.Add(CalRelativePosition(Point, PlanetPosition));
+	}
+	return RelativePositionArray;
+}
+
+TArray<FVector> ACVProcessor::Generate3Vector(TArray<float> XPos, TArray<float> YPos, TArray<float> Sizes)
 {
 	TArray<FVector> Positions;
 	for (int i = 0; i < Sizes.Num(); i++)
@@ -26,8 +67,8 @@ TArray<FVector> ACVProcessor::Generate3Vector(TArray<float>& XPos, TArray<float>
 	return Positions;
 }
 
-TArray<FVector> ACVProcessor::Generate3Vector(TArray<float>& XPos, TArray<float>& YPos, TArray<float>& Sizes,
-	double PCoefficient)
+TArray<FVector> ACVProcessor::Generate3Vector(TArray<float> XPos, TArray<float> YPos, TArray<float> Sizes,
+	float PCoefficient)
 {
 	TArray<FVector> Positions;
 	for (int i = 0; i < Sizes.Num(); i++)
@@ -38,7 +79,7 @@ TArray<FVector> ACVProcessor::Generate3Vector(TArray<float>& XPos, TArray<float>
 	return Positions;
 }
 
-TMap<FVector, float> ACVProcessor::GetNearest3Point(TArray<FVector> Points, FVector Position, float Limit)
+TMap<FVector, float> ACVProcessor::CalculateGetNearest3Point(TArray<FVector> Points, FVector Position, float Limit)
 {
 	TMap<FVector, float> AllDistances2Planet;
 	for (int i = 0; i < Points.Num(); i++)
@@ -65,7 +106,7 @@ TMap<FVector, float> ACVProcessor::GetNearest3Point(TArray<FVector> Points, FVec
 }
 
 FVector ACVProcessor::CalculateGravityPoint(TMap<FVector, float> PointDistances2Planet,
-	double PSizeCoefficient, double PForceCoefficient)
+	float PSizeCoefficient, float PForceCoefficient)
 {
 	// Calculate the sum of vector for all vectors in PointDistances2Planet
 	FVector SumVector = FVector(0, 0, 0);
@@ -92,5 +133,31 @@ TArray<FVector> ACVProcessor::AdjustCameraOffset(TArray<FVector> points, FVector
 	return points;
 }
 
+FVector ACVProcessor::CalRelativePosition(FVector Point, FVector Planet)
+{
+	return Point - Planet;
+}
 
+float ACVProcessor::GetForce2Distance(FVector Point, FVector Planet, int ForceCoefficient, int PlanetSize) const
+{
+	const float Distance = FVector::Distance(Point, Planet);
+	if (Distance < PlanetSize)
+	{
+		const float InsidePercentage = (Distance / PlanetSize) * (PI / 2);
+		return sin(InsidePercentage) * ForceCoefficient;
+	}
+	return ForceCoefficient;
+}
 
+FVector ACVProcessor::GetGravityDirection(FVector Point, FVector Planet, int ForceCoefficient)
+{
+	FVector RelativePosition = CalRelativePosition(Point, Planet);
+	FVector DirectionVector = RelativePosition.GetSafeNormal();
+
+	return DirectionVector * ForceCoefficient;
+}
+
+FVector ACVProcessor::GetPullBackDirection(FVector Origin, FVector Planet)
+{
+	return Origin - Planet;
+}
